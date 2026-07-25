@@ -1,99 +1,18 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useMemo, useRef, useState } from "react";
+import { TemplateMockup } from "@/src/components/press-kit/TemplateMockup";
+import placeholderDj from "@/src/assets/images/placeholder-dj.webp";
+import { equipment, formSteps, genres, initialForm, templates } from "@/src/data/press-kit";
+import {
+  createPressKitPdf,
+  IMAGE_UPLOAD_RULES,
+  validatePressKitImages,
+} from "@/src/lib/press-kit-pdf";
+import type { PressKitFormData, TemplateId } from "@/src/types/press-kit";
 
-type TemplateId = "pulse" | "voltage" | "afterdark";
-
-type FormData = {
-  artistName: string;
-  realName: string;
-  city: string;
-  email: string;
-  phone: string;
-  biography: string;
-  experiences: string;
-  genres: string[];
-  equipment: string[];
-  instagram: string;
-  soundcloud: string;
-  website: string;
-};
-
-const initialForm: FormData = {
-  artistName: "",
-  realName: "",
-  city: "",
-  email: "",
-  phone: "",
-  biography: "",
-  experiences: "",
-  genres: [],
-  equipment: [],
-  instagram: "",
-  soundcloud: "",
-  website: "",
-};
-
-const templates: Array<{
-  id: TemplateId;
-  number: string;
-  name: string;
-  description: string;
-  accent: string;
-}> = [
-  {
-    id: "pulse",
-    number: "01",
-    name: "PULSE",
-    description: "Editorial, directo y eléctrico.",
-    accent: "#b7ff3c",
-  },
-  {
-    id: "voltage",
-    number: "02",
-    name: "VOLTAGE",
-    description: "Cinemático, cálido y nocturno.",
-    accent: "#ff2a78",
-  },
-  {
-    id: "afterdark",
-    number: "03",
-    name: "AFTERDARK",
-    description: "Minimal, intenso y underground.",
-    accent: "#ff3d24",
-  },
-];
-
-const genres = [
-  "House",
-  "Tech House",
-  "Techno",
-  "Melodic Techno",
-  "Progressive",
-  "Afro House",
-  "Minimal",
-  "Trance",
-  "Drum & Bass",
-  "Open Format",
-];
-
-const equipment = [
-  "CDJ-3000",
-  "CDJ-2000NXS2",
-  "DJM-A9",
-  "DJM-900NXS2",
-  "XDJ-XZ",
-  "Allen & Heath Xone:96",
-  "Traktor",
-  "Serato",
-  "Rekordbox",
-];
-
-const steps = [
-  { number: "01", label: "Identidad" },
-  { number: "02", label: "Trayectoria" },
-  { number: "03", label: "Media & setup" },
-];
+const placeholderDjSrc =
+  typeof placeholderDj === "string" ? placeholderDj : placeholderDj.src;
 
 function scrollToBuilder() {
   document.getElementById("crear")?.scrollIntoView({ behavior: "smooth" });
@@ -103,39 +22,10 @@ function toggleItem(list: string[], item: string) {
   return list.includes(item) ? list.filter((value) => value !== item) : [...list, item];
 }
 
-function TemplateMockup({ template, compact = false }: { template: TemplateId; compact?: boolean }) {
-  return (
-    <div className={`kit-mockup kit-${template} ${compact ? "compact" : ""}`} aria-hidden="true">
-      <div className="kit-noise" />
-      <div className="kit-topline">
-        <span>DJ / PRESS KIT</span>
-        <span>2026</span>
-      </div>
-      <div className="kit-portrait">
-        <div className="portrait-head" />
-        <div className="portrait-body" />
-        <div className="portrait-glow" />
-      </div>
-      <div className="kit-title">NOVA</div>
-      <div className="kit-subtitle">electronic artist · buenos aires</div>
-      <div className="kit-copy">
-        <b>PROFILE</b>
-        <span>Hypnotic rhythms. Late-night energy. A sound built for the dancefloor.</span>
-      </div>
-      <div className="kit-stats">
-        <span><b>42</b> SHOWS</span>
-        <span><b>08</b> CITIES</span>
-        <span><b>12K</b> PLAYS</span>
-      </div>
-      <div className="kit-bars"><i /><i /><i /><i /><i /><i /><i /></div>
-    </div>
-  );
-}
-
 export default function Home() {
   const [template, setTemplate] = useState<TemplateId>("pulse");
   const [step, setStep] = useState(0);
-  const [form, setForm] = useState<FormData>(initialForm);
+  const [form, setForm] = useState<PressKitFormData>(initialForm);
   const [photos, setPhotos] = useState<File[]>([]);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
@@ -148,7 +38,7 @@ export default function Home() {
     [template],
   );
 
-  function updateField(field: keyof FormData, value: string) {
+  function updateField(field: keyof PressKitFormData, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
@@ -160,11 +50,21 @@ export default function Home() {
     );
   }
 
-  function handlePhotos(event: ChangeEvent<HTMLInputElement>) {
-    const next = Array.from(event.target.files ?? []).slice(0, 5);
-    photoUrls.forEach((url) => URL.revokeObjectURL(url));
-    setPhotos(next);
-    setPhotoUrls(next.map((file) => URL.createObjectURL(file)));
+  async function handlePhotos(event: ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    if (!selectedFiles.length) return;
+
+    const { accepted, errors: imageErrors } =
+      await validatePressKitImages(selectedFiles);
+
+    if (accepted.length > 0) {
+      photoUrls.forEach((url) => URL.revokeObjectURL(url));
+      setPhotos(accepted);
+      setPhotoUrls(accepted.map((file) => URL.createObjectURL(file)));
+    }
+
+    setErrors(imageErrors);
+    event.target.value = "";
   }
 
   function validate(currentStep = step) {
@@ -226,79 +126,7 @@ export default function Home() {
   }
 
   async function generatePdf() {
-    const { jsPDF } = await import("jspdf");
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-    const colors: Record<TemplateId, [number, number, number]> = {
-      pulse: [183, 255, 60],
-      voltage: [255, 42, 120],
-      afterdark: [255, 61, 36],
-    };
-    const accent = colors[template];
-    doc.setFillColor(7, 7, 9);
-    doc.rect(0, 0, 210, 297, "F");
-    doc.setFillColor(...accent);
-    doc.rect(0, 0, template === "afterdark" ? 210 : 9, template === "afterdark" ? 10 : 297, "F");
-
-    if (photos[0]) {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = reject;
-        reader.readAsDataURL(photos[0]);
-      });
-      try {
-        doc.addImage(dataUrl, "JPEG", 110, 18, 82, 92, undefined, "FAST");
-      } catch {
-        // Some image codecs are not supported by PDF engines; the kit remains complete without it.
-      }
-    }
-
-    doc.setTextColor(...accent);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("OFFICIAL PRESS KIT · 2026", 22, 28);
-    doc.setTextColor(248, 248, 246);
-    doc.setFontSize(36);
-    doc.text(form.artistName.toUpperCase(), 22, 55, { maxWidth: 88 });
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(170, 170, 170);
-    doc.text(`${form.city.toUpperCase()} · ${form.genres.join(" / ").toUpperCase()}`, 22, 68, { maxWidth: 84 });
-    doc.setDrawColor(...accent);
-    doc.line(22, 79, 92, 79);
-
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...accent);
-    doc.text("BIOGRAPHY", 22, 96);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(225, 225, 225);
-    doc.setFontSize(9);
-    doc.text(doc.splitTextToSize(form.biography, 166), 22, 105);
-
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...accent);
-    doc.text("EXPERIENCE", 22, 162);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(225, 225, 225);
-    doc.text(doc.splitTextToSize(form.experiences, 166), 22, 171);
-
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...accent);
-    doc.text("SOUND", 22, 218);
-    doc.setTextColor(245, 245, 245);
-    doc.setFont("helvetica", "normal");
-    doc.text(form.genres.join("  ·  "), 22, 228, { maxWidth: 166 });
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...accent);
-    doc.text("TECHNICAL SETUP", 22, 245);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(245, 245, 245);
-    doc.text(doc.splitTextToSize(form.equipment.join("  ·  "), 166), 22, 255);
-
-    doc.setFontSize(8);
-    doc.setTextColor(155, 155, 155);
-    doc.text(`${form.instagram}   ${form.soundcloud}   ${form.website}`, 22, 282, { maxWidth: 166 });
-    doc.save(`${form.artistName.toLowerCase().replace(/\s+/g, "-")}-press-kit.pdf`);
+    await createPressKitPdf(form, template, photos);
   }
 
   async function submit(event: FormEvent) {
@@ -403,7 +231,7 @@ export default function Home() {
         <div className="builder-shell">
           <div className="form-panel">
             <div className="progress">
-              {steps.map((item, index) => (
+              {formSteps.map((item, index) => (
                 <button key={item.number} className={index <= step ? "active" : ""} onClick={() => index < step && setStep(index)}>
                   <span>{item.number}</span>{item.label}
                 </button>
@@ -455,7 +283,12 @@ export default function Home() {
                     <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handlePhotos} />
                     <span className="upload-icon">＋</span>
                     <strong>SUBÍ TUS MEJORES FOTOS *</strong>
-                    <small>Entre 1 y 5 imágenes · JPG, PNG o WEBP</small>
+                    <small>
+                      Entre {IMAGE_UPLOAD_RULES.minCount} y {IMAGE_UPLOAD_RULES.maxCount} fotos ·
+                      mínimo {IMAGE_UPLOAD_RULES.minWidth}×{IMAGE_UPLOAD_RULES.minHeight} px ·
+                      máximo {IMAGE_UPLOAD_RULES.maxWidth}×{IMAGE_UPLOAD_RULES.maxHeight} px ·
+                      10 MB cada una
+                    </small>
                     <b>SELECCIONAR ARCHIVOS</b>
                   </label>
                   {photoUrls.length > 0 && <div className="photo-strip">{photoUrls.map((url, index) => <img key={url} src={url} alt={`Foto cargada ${index + 1}`} />)}</div>}
@@ -477,9 +310,18 @@ export default function Home() {
           <aside className="preview-panel">
             <div className="preview-label"><span>●</span> VISTA PREVIA EN VIVO</div>
             <div className="live-preview" style={{ "--preview-accent": selectedTemplate.accent } as React.CSSProperties}>
-              {photoUrls[0] ? <img src={photoUrls[0]} alt="" /> : <div className="preview-person"><i /><b /></div>}
+              {photoUrls[0] ? (
+                <img src={photoUrls[0]} alt="" />
+              ) : (
+                <img
+                  className="preview-person"
+                  src={placeholderDjSrc}
+                  alt="Vista previa del retrato del DJ"
+                  decoding="async"
+                />
+              )}
               <div className="live-template">{selectedTemplate.name} / 2026</div>
-              <h4>{form.artistName || "TU NOMBRE"}</h4>
+              <h4>{form.artistName || "NOMBRE"}</h4>
               <p>{form.city || "TU CIUDAD"} · {(form.genres[0] || "TU GÉNERO").toUpperCase()}</p>
               <div className="preview-rule" />
               <small>{form.biography || "Tu biografía y propuesta artística aparecerán acá mientras completás el formulario."}</small>
