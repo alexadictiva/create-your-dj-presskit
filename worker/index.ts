@@ -54,26 +54,7 @@ const worker = {
       ]);
 
       if (request.method === "GET") {
-        const result = await env.DB.prepare("SELECT * FROM djs ORDER BY created_at DESC LIMIT 500").all();
-        const rows = result.results.map((row) => ({
-          id: row.id,
-          artistName: row.artist_name,
-          realName: row.real_name,
-          city: row.city,
-          email: row.email,
-          phone: row.phone,
-          biography: row.biography,
-          experiences: row.experiences,
-          genres: JSON.parse(String(row.genres)),
-          equipment: JSON.parse(String(row.equipment)),
-          instagram: row.instagram,
-          soundcloud: row.soundcloud,
-          website: row.website,
-          template: row.template,
-          photos: JSON.parse(String(row.photos)),
-          createdAt: row.created_at,
-        }));
-        return Response.json(rows);
+        return Response.json({ error: "Unauthorized" }, { status: 401 });
       }
 
       if (request.method === "POST") {
